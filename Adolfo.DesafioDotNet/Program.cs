@@ -6,7 +6,11 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Serilog;
+using Serilog.Events;
+using Serilog.Sinks.SystemConsole.Themes;
 
 namespace Adolfo.DesafioDotNet
 {
@@ -14,11 +18,37 @@ namespace Adolfo.DesafioDotNet
     {
         public static void Main(string[] args)
         {
-            CreateWebHostBuilder(args).Build().Run();
+            var seed = args.Any(x => x == "/seed");
+            if (seed) args = args.Except(new[] { "/seed" }).ToArray();
+
+            var host = CreateWebHostBuilder(args).Build();
+
+            if (seed)
+            {
+                var config = host.Services.GetRequiredService<IConfiguration>();
+                var connectionString = config.GetConnectionString("DefaultConnection");
+                SeedData.EnsureSeedData(connectionString);
+                return;
+            }
+
+            host.Run();
         }
 
-        public static IWebHostBuilder CreateWebHostBuilder(string[] args) =>
-            WebHost.CreateDefaultBuilder(args)
-                .UseStartup<Startup>();
+        public static IWebHostBuilder CreateWebHostBuilder(string[] args)
+        {
+            return WebHost.CreateDefaultBuilder(args)
+                    .UseStartup<Startup>()
+                    .UseSerilog((context, configuration) =>
+                    {
+                        configuration
+                            .MinimumLevel.Debug()
+                            .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+                            .MinimumLevel.Override("System", LogEventLevel.Warning)
+                            .MinimumLevel.Override("Microsoft.AspNetCore.Authentication", LogEventLevel.Information)
+                            .Enrich.FromLogContext()
+                            .WriteTo.File(@"adolfo_desafio_dot_net_log.txt")
+                            .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level}] {SourceContext}{NewLine}{Message:lj}{NewLine}{Exception}{NewLine}", theme: AnsiConsoleTheme.Literate);
+                    });
+        }
     }
 }
